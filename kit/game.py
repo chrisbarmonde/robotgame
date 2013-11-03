@@ -383,9 +383,20 @@ class Render:
 
         self._colors[loc] = color
         x, y = loc
-        self._win.create_rectangle(x * self._blocksize + 20, y * self._blocksize + 20,
-            x * self._blocksize + self._blocksize - 3 + 20, y * self._blocksize + self._blocksize - 3 + 20,
+        self._win.create_rectangle(
+            x * self._blocksize + 20,
+            y * self._blocksize + 20,
+            x * self._blocksize + self._blocksize - 3 + 20,
+            y * self._blocksize + self._blocksize - 3 + 20,
             fill=color, width=0)
+
+        robot = self._game._field[loc]
+        if robot:
+            self._win.create_text(
+                (x * self._blocksize + 20, y * self._blocksize + 20),
+                width=self._blocksize,
+                anchor='nw',
+                text=robot.hp)
 
     def update_title(self, turns, max_turns):
         red, green = self._game.get_scores()
