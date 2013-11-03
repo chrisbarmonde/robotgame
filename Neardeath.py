@@ -85,7 +85,6 @@ class PathFinder:
         'OPEN': 4
     }
 
-
     def __init__(self, friends, enemies):
         self.friend_locations = [bot['location'] for bot in friends]
         self.enemy_locations = [bot['location'] for bot in enemies]
@@ -118,7 +117,10 @@ class PathFinder:
         return len(adjacent[self.TYPES['OPEN']]) == 0
 
     def get_best_path(self, bot, enemies, allow_collision=False):
-        potential_paths = self.get_potential_paths(bot, enemies)
+        enemy = _sorted(enemies, 'hp')[0]
+        coords = enemy['location']
+
+        potential_paths = self.get_potential_paths(bot, coords)
         allow_spawns = self.are_spawns_valid(bot)
         paths = [path for path in potential_paths
                  if self.are_valid_coords(path, allow_collision, allow_spawns)]
@@ -129,14 +131,12 @@ class PathFinder:
                          if path in self.friend_locations]
                 if len(paths) > 0:
                     return self.find_adjacent_path(
-                        bot, paths[0], allow_collision, allow_spawns)
-            return self.find_open_path(bot)
-        return paths[random.randint(0, len(paths) - 1)]
+                        bot, paths[0], allow_collision, allow_spawns, coords)
+            return self.find_open_path(bot, coords)
+        return random.choice(paths)
 
-    def get_potential_paths(self, bot, enemies):
-        by_hp = _sorted(enemies, 'hp')
-
-        vector = bot.vector.subtract(by_hp[0]['location'])
+    def get_potential_paths(self, bot, coords):
+        vector = bot.vector.subtract(coords)
         move_x = abs(vector.x) > 0
         move_y = abs(vector.y) > 0
 
@@ -151,7 +151,7 @@ class PathFinder:
 
         return potential_paths
 
-    def find_adjacent_path(self, bot, coord, allow_collision=False, allow_spawns=False):
+    def find_adjacent_path(self, bot, coord, allow_collision=False, allow_spawns=False, closest_to=None):
         vector = bot.vector.subtract(coord)
         rand = random.randint(1, 100) % 2
 
@@ -160,27 +160,31 @@ class PathFinder:
             if not self.are_valid_coords(new_coords, allow_collision, allow_spawns):
                 new_coords = bot.vector.add((0, -1 if rand else 1)).to_tuple()
                 if not self.are_valid_coords(new_coords, allow_collision, allow_spawns):
-                    new_coords = self.find_open_path(bot)
+                    new_coords = self.find_open_path(bot, closest_to)
         else:
             new_coords = bot.vector.add(1 if rand else -1, 0).to_tuple()
             if not self.are_valid_coords(new_coords, allow_collision, allow_spawns):
                 new_coords = bot.vector.add((-1 if rand else 1, 0)).to_tuple()
                 if not self.are_valid_coords(new_coords, allow_collision, allow_spawns):
-                    new_coords = self.find_open_path(bot)
+                    new_coords = self.find_open_path(bot, closest_to)
 
         return new_coords
 
-    def find_open_path(self, bot):
+    def find_open_path(self, bot, closest_to=None):
         adjacent = self._categorize_adjacent(bot.location)
-        open = adjacent[self.TYPES['OPEN']]
-        if open:
-            return open[random.randint(0, len(open) - 1)]
+        paths = adjacent[self.TYPES['OPEN']]
+        if not paths:
+            paths = adjacent[self.TYPES['SPAWN']]
+            if not paths:
+                return None
 
-        spawns = adjacent[self.TYPES['SPAWN']]
-        if spawns:
-            return spawns[random.randint(0, len(spawns) - 1)]
-
-        return None
+        if closest_to and len(paths) > 1:
+            distance = []
+            for coords in paths:
+                distance.append((Vector(coords).move_distance(closest_to), coords))
+            distance.sort()
+            return distance[0][1]
+        return random.choice(paths)
 
 
 class GameStrategy:
@@ -209,14 +213,13 @@ class GameStrategy:
     def get_closest_enemies(self, robot, game):
         closest_distance = None
         closest_enemies = []
-        for location, bot in game['robots'].iteritems():
-            if bot['player_id'] != robot.player_id:
-                distance = robot.vector.move_distance(location)
-                if closest_distance is None or distance < closest_distance:
-                    closest_distance = distance
-                    closest_enemies = [bot]
-                elif distance == closest_distance:
-                    closest_enemies.append(bot)
+        for bot in self.enemies:
+            distance = robot.vector.move_distance(bot['location'])
+            if closest_distance is None or distance < closest_distance:
+                closest_distance = distance
+                closest_enemies = [bot]
+            elif distance == closest_distance:
+                closest_enemies.append(bot)
 
         return closest_enemies, closest_distance
 
@@ -244,15 +247,13 @@ class GameStrategy:
 
     def update(self, robot, game):
         if game['turn'] > self.turn:
-            self._update_counts(robot, game)
             self.turn = game['turn']
-
             self.friends = [bot for bot in game['robots'].values()
                             if bot['player_id'] == robot.player_id]
             self.enemies = [bot for bot in game['robots'].values()
                             if bot['player_id'] != robot.player_id]
-
             self.path_finder = PathFinder(self.friends, self.enemies)
+            self._update_counts(robot, game)
         #
         #if not robot.id:
         #    log("Assigning id {}".format(self.bot_counter))
@@ -271,9 +272,8 @@ class GameStrategy:
             self.bot_hp = robot.hp
 
         self.total_bots = len(game['robots'])
-        self.friendly_bots = len([bot for bot in game['robots'].itervalues()
-                                  if bot['player_id'] == robot.player_id])
-        self.enemy_bots = self.total_bots - self.friendly_bots
+        self.friendly_bots = len(self.friends)
+        self.enemy_bots = len(self.enemies)
 
         if not self.spawn_count:
             self.spawn_count = self.friendly_bots
@@ -355,18 +355,18 @@ class Robot:
         self.pre_act()
         strategy.update(self, game)
         enemies, distance = strategy.get_closest_enemies(self, game)
+        action = None
         if distance == 1:
             #self.log("Attacking", enemy['location'])
             action = strategy.get_attack_strategy(self, enemies)
         elif len(enemies) > 0:
             movement = strategy.move_towards(self, enemies)
-            if movement == self.location:
-                action = ['guard']
-            else:
+            if movement:
                 #self.log('Moving', movement.to_tuple())
                 strategy.update_movement(self.location, movement)
                 action = ['move', movement]
-        else:
+
+        if not action:
             action = ['guard']
 
         return action
