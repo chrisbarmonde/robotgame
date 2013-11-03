@@ -12,6 +12,7 @@ import time
 import json
 import zlib
 import base64
+import traceback
 ###
 import codejail
 from robotexception import *
@@ -32,8 +33,6 @@ codejail.PlayerCodeJail.allowed_imports = settings.safe_imports
 codejail.PlayerCodeJail.allowed_magic = settings.safe_magic
 
 def load_map(map_file):
-    global settingss
-
     map_data = ast.literal_eval(open(map_file).read())
     settings.spawn_coords = map_data['spawn']
     settings.obstacles = map_data['obstacle']
@@ -44,8 +43,6 @@ class DefaultRobot:
 
 class Player:
     def __init__(self, player_id, code):
-        global settings
-
         self._mod = None
         self._player_id = player_id
         self._robot = None
@@ -69,7 +66,7 @@ class InternalRobot:
         self.hp = hp
         self.player_id = player_id
         self.field = field
-        
+
     @staticmethod
     def distance(p1, p2):
         return math.sqrt(pow(p2[0]-p1[0], 2) + pow(p2[1]-p1[1], 2))
@@ -113,8 +110,6 @@ class InternalRobot:
         return True
 
     def can_act(self, loc, action_table, no_raise=False, move_stack=None):
-        global settings
-
         if move_stack is not None and self in move_stack:
             return self == move_stack[0]
         if not self.movable_loc(loc):
@@ -150,7 +145,7 @@ class InternalRobot:
                         if no_raise:
                             return False
                         raise UnitBlockCollision(robot)
-                            
+
         if len(moving) > 0:
             if no_raise:
                 return False
@@ -158,7 +153,6 @@ class InternalRobot:
         return True
 
     def call_move(self, loc, action_table):
-        global settings
         try:
             if self.can_act(loc, action_table):
                 self.location = loc
@@ -202,8 +196,6 @@ class InternalRobot:
 
     @staticmethod
     def is_valid_action(action):
-        global settings
-
         cmd, params = InternalRobot.parse_command(action)
         return cmd in settings.valid_commands
 
@@ -244,8 +236,6 @@ class Game:
             self._field_storage = []
 
     def build_game_info(self):
-        global settings
-
         return {
             'robots': dict((
                 y.location,
@@ -265,8 +255,6 @@ class Game:
             user_robot.on_new_turn()
 
     def make_robots_act(self):
-        global settings
-
         game_info = self.build_game_info()
         actions = {}
 
@@ -282,7 +270,9 @@ class Game:
                 next_action = limit_execution_time(settings.max_usercode_time/1000, user_robot.act, game_info)
                 if not InternalRobot.is_valid_action(next_action):
                     raise Exception
-            except Exception:
+            except Exception, e:
+                print "Exception in compiled code: ", e
+                traceback.print_exc()
                 next_action = ['guard']
 
             actions[robot] = next_action
@@ -307,8 +297,6 @@ class Game:
         self._field[loc] = robot
 
     def spawn_robot_batch(self):
-        global settings
-
         locs = random.sample(settings.spawn_coords, settings.spawn_per_player * 2)
         for player_id in range(2):
             for i in range(settings.spawn_per_player):
@@ -336,8 +324,6 @@ class Game:
         return '|'.join([' '.join(x) for x in record])
 
     def run_turn(self):
-        global settings
-
         self.notify_new_turn()
         self.make_robots_act()
         self.remove_dead()
@@ -363,8 +349,6 @@ class Game:
 
 class Render:
     def __init__(self, game, block_size=20):
-        global settings
-
         self._blocksize = block_size
         self._winsize = block_size * settings.board_size + 40
         self._game = game
@@ -383,8 +367,6 @@ class Render:
         self._win.mainloop()
 
     def prepare_backdrop(self, win):
-        global settings
-
         self._win.create_rectangle(0, 0, self._winsize, self._winsize + self._blocksize, fill='#555', width=0)
         self._win.create_rectangle(0, self._winsize, self._winsize, self._winsize + self._blocksize * 7/4, fill='#333', width=0)
         for x in range(settings.board_size):
@@ -412,8 +394,6 @@ class Render:
                 red, green, turns, max_turns))
 
     def callback(self):
-        global settings
-
         self._game.run_turn()
         self.paint()
         self.update_title(self._game.turns, settings.max_turns)
@@ -422,8 +402,6 @@ class Render:
             self._win.after(settings.turn_interval, self.callback)
 
     def determine_color(self, loc):
-        global settings
-
         if loc in settings.obstacles:
             return '#222'
         robot = self._game.robot_at_loc(loc)
@@ -432,8 +410,6 @@ class Render:
         return 'white'
 
     def paint(self):
-        global settings
-
         for y in range(settings.board_size):
             for x in range(settings.board_size):
                 loc = (x, y)

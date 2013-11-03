@@ -36,7 +36,7 @@ class PlayerCodeJail:
     @staticmethod
     def create_import_hook(self):
         def import_hook(name, globals=None, locals=None, fromlist=None, level=-1):
-            if name not in PlayerCodeJail.allowed_imports: 
+            if name not in PlayerCodeJail.allowed_imports:
                 self.halt('not allowed to import %s' % name)
             return __import__(name, globals, locals, fromlist, level)
         return import_hook

@@ -15,7 +15,7 @@ if __name__ == '__main__':
         g = game.Game(*players)
 
         map_name = 'maps/default.py'
-        if len(sys.argv) > 3:
+        if len(sys.argv) > 3 and sys.argv[3] != '--render':
             map_name = sys.argv[3]
 
         game.load_map(map_name)

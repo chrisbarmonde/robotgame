@@ -40,7 +40,7 @@
     'max_turns': 100,
     'rating_range': 150,
     'default_rating': 1200,
-    'safe_imports': ('hashlib', 'math', 'random', 'operator', 'itertools'),
+    'safe_imports': ('hashlib', 'math', 'random', 'operator', 'itertools', 'logging'),
     'safe_magic': ('init',),
     'max_usercode_time': 100,
 }
